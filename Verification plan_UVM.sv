@@ -86,7 +86,7 @@ class my_corner_data_seq extends my_base_sequence;
       finish_item(req);
     end
   endtask
-endclass
+endclass                     
                      
 class my_toggle_seq extends my_base_sequence;
   `uvm_object_utils(my_toggle_seq)
@@ -118,7 +118,33 @@ class my_idle_seq extends my_base_sequence;
       finish_item(req);
     end
   endtask
-endclass                     
+endclass 
+
+// -------------------------------------------------------------------------
+// Qualcomm Specifc Sequence: Early Request De-assertion (Power-Gate Glitch)
+// -------------------------------------------------------------------------
+class my_early_deassert_seq extends my_base_sequence;
+  `uvm_object_utils(my_early_deassert_seq)
+
+  function new(string name = "my_early_deassert_seq");
+    super.new(name);
+  endfunction
+
+  virtual task body();
+    `uvm_info("SEQ_QUALCOMM", "Starting EARLY DE-ASSERTION sequence (Glitcher)", UVM_LOW)
+    
+    repeat(30) begin
+      req = my_transaction::type_id::create("req");
+      start_item(req);
+      
+      if (!req.randomize() with { delay == 0; }) begin
+        `uvm_fatal("SEQ", "Randomization failed!")
+      end
+      
+      finish_item(req);
+    end
+  endtask
+endclass
 
 // -------------------------------------------------------------------------
 // Sequencer
@@ -140,9 +166,7 @@ class my_driver extends uvm_driver #(my_transaction);
   virtual my_interface.DRIVER_MP vif;
   uvm_analysis_port #(my_transaction) drv_ap; 
 
-  function new(string name, uvm_component parent);
-  super.new(name, parent);
-  endfunction
+  function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
@@ -152,10 +176,9 @@ class my_driver extends uvm_driver #(my_transaction);
   endfunction
 
   virtual task run_phase(uvm_phase phase);
-    // Reset Sequence
     vif.drv_cb.reset_n <= 0;
     vif.drv_cb.req     <= 0;
-    vif.drv_cb.data    <= 0 ;
+    vif.drv_cb.data    <= 0;
     repeat(5) @(vif.drv_cb);
     vif.drv_cb.reset_n <= 1;
 
@@ -167,26 +190,34 @@ class my_driver extends uvm_driver #(my_transaction);
     end
   endtask
 
-virtual task drive_item(my_transaction tr);
-  @(vif.drv_cb);
+  virtual task drive_item(my_transaction tr);
+    @(vif.drv_cb);
     vif.drv_cb.req  <= 1;
     vif.drv_cb.data <= tr.data;
 
-    fork
+    if (tr.delay == 0) begin
+      // הזרקת באג קוואלקום: הורדה מיידית ואגרסיבית של ה-REQ
+      vif.drv_cb.req <= 0;
+      `uvm_info("DRV_QUALCOMM", "Glitch Injected: REQ dropped early!", UVM_HIGH)
+    end 
+    else begin
+      fork
         begin: wait_for_ack
           wait(vif.drv_cb.ack === 1);
         end
         begin: timeout_watchdog
           repeat(100) @(vif.drv_cb);
-            `uvm_error("DRV_TIMEOUT", "DUT failed to respond with ACK within 100 cycles!")
+          `uvm_error("DRV_TIMEOUT", "DUT failed to respond with ACK within 100 cycles!")
         end
-    join_any
-    disable fork; 
+      join_any
+      disable fork; 
 
-    repeat(tr.delay) @(posedge vif.clk);
-    vif.drv_cb.req  <= 0;
+      repeat(tr.delay) @(vif.drv_cb);
+      vif.drv_cb.req  <= 0;
+    end
+    @(vif.drv_cb);
   endtask
-endclass 
+endclass
 
 // -------------------------------------------------------------------------
 // 4. Monitor: הצופה הפסיבי
@@ -377,6 +408,19 @@ class my_corner_test extends my_base_test;
   virtual function void build_phase(uvm_phase phase);
     set_type_override_by_type(my_base_sequence::get_type(), my_corner_data_seq::get_type());
     super.build_phase(phase);
+  endfunction
+endclass
+
+// -------------------------------------------------------------------------
+// 7. Qualcomm Qualcomm Glitch Test Integration
+// -------------------------------------------------------------------------
+class my_qualcomm_glitch_test extends my_base_test;
+  `uvm_component_utils(my_qualcomm_glitch_test)
+  function new (string name, uvm_component parent); super.new(name, parent); endfunction
+
+  virtual function void build_phase(uvm_phase phase);
+    set_type_override_by_type(my_base_sequence::get_type(), my_early_deassert_seq::get_type());
+    super.build_phase(phase); 
   endfunction
 endclass
       
