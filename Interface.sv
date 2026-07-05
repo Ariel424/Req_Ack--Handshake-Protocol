@@ -4,6 +4,8 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
   logic req; 
   logic ack; 
   logic [DATA_WIDTH-1:0] data;
+  logic pwr_stable; // Power Gate - 0 the block is off, 1 the block is on
+  logic iso_en; // x-State - 1 is active
   bit assertions_en = 1; 
 
   // --- Clocking Blocks ---
@@ -50,7 +52,7 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
   cover_req_ack_handshake: cover property (req ##[1:5] ack); // וידוא שהיה handshake מהיר
 
   // --- Properties (SVA) ---
-  
+    
   property p_data_stability;
     @(mon_cb) disable iff (!reset_n || !assertions_en)
     (mon_cb.req && !mon_cb.ack) |=> $stable(data) throughout (ack [->1]);
@@ -65,6 +67,14 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
     @(mon_cb) disable iff (!reset_n || !assertions_en)
     (mon_cb.req && !mon_cb.ack) |=> req until_with ack;
   endproperty
+
+  property p_no_x_propagation;
+    @(posedge clk) (pwr_stable && !iso_en) |-> !$isunknown({req, ack, data});
+  endproperty
+
+  assert_no_x: assert property (p_no_x_propagation)
+    else $error("[POWER ERROR] X-State detected on protocol lines while power is stable!");
+endinterface
 
   // --- Assertion Directives ---
 
