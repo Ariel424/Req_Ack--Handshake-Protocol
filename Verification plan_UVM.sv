@@ -191,12 +191,22 @@ class my_driver extends uvm_driver #(my_transaction);
   endtask
 
   virtual task drive_item(my_transaction tr);
-    @(vif.drv_cb);
+    
+   virtual task drive_item(my_transaction tr);
+    // Before driving, check if the system is currently power-gated
+    if (!vif.pwr_stable || vif.iso_en) begin
+      `uvm_info("DRV_POWER", "Block is power-gated. Driving X-states to simulate leakage.", UVM_HIGH)
+      vif.drv_cb.req  <= 'x;
+      vif.drv_cb.data <= 'x;
+      @(vif.drv_cb);
+      return;
+    end
+  
+    // Normal Driving Logic
     vif.drv_cb.req  <= 1;
     vif.drv_cb.data <= tr.data;
-
+  
     if (tr.delay == 0) begin
-      // הזרקת באג קוואלקום: הורדה מיידית ואגרסיבית של ה-REQ
       vif.drv_cb.req <= 0;
       `uvm_info("DRV_QUALCOMM", "Glitch Injected: REQ dropped early!", UVM_HIGH)
     end 
@@ -206,12 +216,18 @@ class my_driver extends uvm_driver #(my_transaction);
           wait(vif.drv_cb.ack === 1);
         end
         begin: timeout_watchdog
-          repeat(100) @(vif.drv_cb);
-          `uvm_error("DRV_TIMEOUT", "DUT failed to respond with ACK within 100 cycles!")
+          // If power drops during transaction, stop waiting to prevent driver hang
+          fork
+            repeat(100) @(vif.drv_cb);
+            @ (negedge vif.pwr_stable); 
+          join_any
+          disable fork;
+          if (!vif.pwr_stable) `uvm_info("DRV_POWER", "Transaction aborted due to Power Down", UVM_LOW)
+          else `uvm_error("DRV_TIMEOUT", "DUT failed to respond with ACK within 100 cycles!")
         end
       join_any
       disable fork; 
-
+  
       repeat(tr.delay) @(vif.drv_cb);
       vif.drv_cb.req  <= 0;
     end
@@ -220,7 +236,7 @@ class my_driver extends uvm_driver #(my_transaction);
 endclass
 
 // -------------------------------------------------------------------------
-// 4. Monitor: הצופה הפסיבי
+// 4. Monitor: 
 // -------------------------------------------------------------------------
 class my_monitor extends uvm_monitor;
   `uvm_component_utils(my_monitor)
@@ -238,23 +254,27 @@ class my_monitor extends uvm_monitor;
       mon_ap = uvm_analysis_port #(my_transaction)::type_id::create("mon_ap", this);
   endfunction
 
-  virtual task run_phase(uvm_phase phase);
-    forever @(posedge vif.mon_cb or negedge vif.reset_n) begin
-      if (vif.reset_n == 0) begin
-        `uvm_info("MON", "Reset detected, clearing monitor state", UVM_HIGH)
-      end     
-      else if (vif.mon_cb.req && vif.mon_cb.ack) begin
-        tr = my_transaction::type_id::create("tr");
-        tr.data = vif.mon_cb.data;
-        mon_ap.write(tr);
-        `uvm_info("MON", $sformatf("Sampled Data: %0h", tr.data), UVM_MEDIUM)
-      end
+virtual task run_phase(uvm_phase phase);
+  forever @(posedge vif.clk or negedge vif.reset_n) begin
+    if (vif.reset_n == 0) begin
+      `uvm_info("MON", "Reset detected, clearing monitor state", UVM_HIGH)
+    end  
+    // Monitor must check for valid power states before sampling protocol lines
+    else if (!vif.pwr_stable || vif.iso_en) begin
+      `uvm_info("MON_POWER", "Block is not active, skipping protocol sampling", UVM_HIGH)
     end
-  endtask
+    else if (vif.req === 1'b1 && vif.ack === 1'b1) begin // Using === to handle possible X's safely
+      tr = my_transaction::type_id::create("tr");
+      tr.data = vif.data;
+      mon_ap.write(tr);
+      `uvm_info("MON", $sformatf("Sampled Data: %0h", tr.data), UVM_MEDIUM)
+    end
+  end
+endtask
 endclass
       
 // -------------------------------------------------------------------------
-// 5. Scoreboard: השופט (משתמש ב-Decl Macros להפרדת כניסות)
+// 5. Checker
 // -------------------------------------------------------------------------
 `uvm_analysis_imp_decl(_exp)
 `uvm_analysis_imp_decl(_act)
