@@ -158,7 +158,7 @@ class my_sequencer extends uvm_sequencer #(my_transaction);
 endclass
                      
 // -------------------------------------------------------------------------
-// 3. Driver: 
+// 3. Driver
 // -------------------------------------------------------------------------
 class my_driver extends uvm_driver #(my_transaction);
   `uvm_component_utils(my_driver)
@@ -168,11 +168,12 @@ class my_driver extends uvm_driver #(my_transaction);
 
   function new(string name, uvm_component parent); super.new(name, parent); endfunction
 
-  virtual function void build_phase(uvm_phase phase);
+ virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if(!uvm_config_db#(virtual my_interface)::get(this, "", "vif", vif))
-      `uvm_fatal("DRV", "Could not get vif from config_db")
-    drv_ap = uvm_analysis_port #(my_transaction)::type_id::create("drv_ap", this);
+    drv_ap = uvm_analysis_port#(my_transaction)::type_id::create("drv_ap", this);
+    if(!uvm_config_db#(virtual apb_if.MP_MONITOR)::get(this, "", "vif", vif)) begin
+      `uvm_fatal("MON", "Unable to access Interface Modport (MP_MONITOR)")
+    end
   endfunction
 
   virtual task run_phase(uvm_phase phase);
@@ -249,9 +250,10 @@ class my_monitor extends uvm_monitor;
 
   virtual function void build_phase(uvm_phase phase);
     super.build_phase(phase);
-    if(!uvm_config_db#(virtual my_interface)::get(this, "", "vif", vif))
-      `uvm_fatal("MON", "Could not get vif from config_db")
-      mon_ap = uvm_analysis_port #(my_transaction)::type_id::create("mon_ap", this);
+    mon_ap = uvm_analysis_port#(my_transaction)::type_id::create("drv_ap", this);
+    if(!uvm_config_db#(virtual apb_if.MP_MONITOR)::get(this, "", "vif", vif)) begin
+      `uvm_fatal("MON", "Unable to access Interface Modport (MP_MONITOR)")
+    end
   endfunction
 
 virtual task run_phase(uvm_phase phase);
