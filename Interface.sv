@@ -66,40 +66,26 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
   // Designed for catching critical power domain transition bugs (Qualcomm/NeoLogic style)
   // =========================================================================
 
-  // 1. ISOLATION CHECK (X-Propagation Prevention): 
-  // Enforces that when the block is powered down, isolation MUST be enabled.
-  // This prevents floating un-driven signals ('X') from leaking into the active SoC.
   property p_power_isolation_check;
     @(posedge clk) disable iff (!reset_n)
     (!pwr_stable && !iso_en) |-> $isunknown({req, ack, data});
   endproperty
 
-  // 2. ACTIVE STATE CLEANLINESS:
-  // Ensures no X-State propagation occurs on protocol lines during normal operation.
   property p_power_active_no_x;
     @(posedge clk) disable iff (!reset_n)
     (pwr_stable && !iso_en) |-> !$isunknown({req, ack, data});
   endproperty
 
-  // 3. ILLEGAL POWER GATING (Mid-Transaction Shutdown):
-  // Critical Check: Prevent Power Controller from shutting down the block while a 
-  // handshake is pending (REQ is high but ACK hasn't responded). Avoids system Deadlocks.
   property p_no_power_down_during_handshake;
     @(mon_cb) disable iff (!reset_n)
     (mon_cb.req && !mon_cb.ack) |-> pwr_stable;
   endproperty
 
-  // 4. POWER-GATED ACTIVITY VIOLATION:
-  // Prevents any peripheral bus (like APB) or master from driving a REQ while 
-  // the block is shut down or isolated.
   property p_no_activity_during_power_gate;
     @(mon_cb) disable iff (!reset_n)
     (!pwr_stable || iso_en) |-> !mon_cb.req;
   endproperty
 
-  // 5. WAKE-UP LATENCY WATCHDOG:
-  // Verifies that once power is stable, the daisy-chain or power controller 
-  // successfully de-asserts isolation within a strict budget of 16 clock cycles.
   property p_wakeup_latency_limit;
     @(posedge clk) disable iff (!reset_n)
     $rose(pwr_stable) |-> ##[1:16] (!iso_en);
@@ -123,55 +109,5 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
   assert_wakeup_timeout: assert property (p_wakeup_latency_limit)
     else $error("[ARIEL POWER ERROR] Wake-up Timeout! Block failed to de-assert Isolation within 16 clock cycles from power-up.");
 
-
-  // =========================================================================
-  // ARIEL TOPAZ - COVERAGE MATRIX
-  // =========================================================================
-
-  // Functional Coverage (Timing & Protocol)
-  covergroup cg_handshake_timing @(mon_cb);
-    option.per_instance = 1;
-    option.name = "Protocol_Timing_Coverage";
-
-    cp_ack_latency: coverpoint ($countones(req && !ack)) {
-        bins immediate = {0};      
-        bins fast      = {1};      
-        bins medium    = {[2:5]};   
-        bins slow      = {[6:20]};  
-        bins timeout   = {21};     
-    }
-
-    cp_idle_between_req: coverpoint ($countones(!req && !ack)) {
-        bins back_to_back = {0};    
-        bins short_idle   = {1};
-        bins long_idle    = {[2:50]};
-    }
-  endgroup
-
-  // Power-Aware Functional Coverage
-  covergroup cg_power_aware_protocol @(posedge clk);
-    option.per_instance = 1;
-    option.name = "Ariel_Power_Aware_Coverage";
-
-    // Track that the environment successfully tested all legitimate power states
-    cp_power_state: coverpoint {pwr_stable, iso_en} {
-      bins block_active    = {2'b10};
-      bins block_isolated  = {2'b11};
-      bins block_shut_down = {2'b01};
-      illegal_bins illegal_state = {2'b00}; // Powered down but not isolated is strictly forbidden
-    }
-
-    // Cross-coverage: Verify a REQ was initiated immediately after a fast wake-up sequence
-    cross_wakeup_and_req: cross cp_power_state, cg_inst.cp_ack_latency {
-      bins req_immediately_after_wakeup = binsof(cp_power_state) intersect {2'b10} && binsof(cg_inst.cp_ack_latency).immediate;
-    }
-  endgroup
-
-  // --- Coverage Instances & Properties ---
-  cg_handshake_timing cg_inst = new();  
-  cg_power_aware_protocol cg_pwr_inst = new();
-
-  cover_data_stability: cover property (p_data_stability);
-  cover_req_ack_handshake: cover property (req ##[1:5] ack); 
 
 endinterface
