@@ -49,23 +49,7 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
     @(mon_cb) disable iff (!reset_n || !assertions_en)
     (mon_cb.req && !mon_cb.ack) |=> req until_with ack;
   endproperty
-
-  // --- Standard Assertion Directives ---
-  assert_data_stability: assert property (p_data_stability) 
-    else $error("[SVA ERROR] DATA toggled while waiting for ACK");
-               
-  assert_act_valid: assert property (p_no_spurious_ack)
-    else $error("[SVA ERROR] ACK rose without a valid REQ!");
-
-  assert_req_persistence: assert property (p_req_persistence)
-    else $error("[SVA ERROR] REQ dropped before ACK was received!");
-
-
-  // =========================================================================
-  // ARIEL TOPAZ - POWER-AWARE ADVANCED PROTOCOL CHECKERS (SVA)
-  // Designed for catching critical power domain transition bugs (Qualcomm/NeoLogic style)
-  // =========================================================================
-
+  
   property p_power_isolation_check;
     @(posedge clk) disable iff (!reset_n)
     (!pwr_stable && !iso_en) |-> $isunknown({req, ack, data});
@@ -92,7 +76,15 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
   endproperty
 
 
-  // --- Power-Aware Assertion Directives ---
+  // --- Standard Assertion Directives ---
+  assert_data_stability: assert property (p_data_stability) 
+    else $error("[SVA ERROR] DATA toggled while waiting for ACK");
+               
+  assert_act_valid: assert property (p_no_spurious_ack)
+    else $error("[SVA ERROR] ACK rose without a valid REQ!");
+
+  assert_req_persistence: assert property (p_req_persistence)
+    else $error("[SVA ERROR] REQ dropped before ACK was received!");
   
   assert_pwr_isolation: assert property (p_power_isolation_check)
     else $error("[ARIEL POWER ERROR] Isolation Enable (iso_en) is missing while block power is down! X-State leakage hazard.");
@@ -108,6 +100,5 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
 
   assert_wakeup_timeout: assert property (p_wakeup_latency_limit)
     else $error("[ARIEL POWER ERROR] Wake-up Timeout! Block failed to de-assert Isolation within 16 clock cycles from power-up.");
-
 
 endinterface
