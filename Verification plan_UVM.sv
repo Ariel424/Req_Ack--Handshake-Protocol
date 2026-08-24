@@ -120,9 +120,6 @@ class my_idle_seq extends my_base_sequence;
   endtask
 endclass 
 
-// -------------------------------------------------------------------------
-// Qualcomm Specifc Sequence: Early Request De-assertion (Power-Gate Glitch)
-// -------------------------------------------------------------------------
 class my_early_deassert_seq extends my_base_sequence;
   `uvm_object_utils(my_early_deassert_seq)
 
