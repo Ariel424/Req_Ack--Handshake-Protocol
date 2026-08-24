@@ -189,8 +189,6 @@ class my_driver extends uvm_driver #(my_transaction);
       seq_item_port.item_done();
     end
   endtask
-
-  virtual task drive_item(my_transaction tr);
     
    virtual task drive_item(my_transaction tr);
     // Before driving, check if the system is currently power-gated
