@@ -11,14 +11,14 @@ interface my_interface #(parameter int DATA_WIDTH = 8) (input logic clk);
 
   // --- Clocking Blocks ---
   clocking drv_cb @(posedge clk);
-    default input #100ps output #100ps; 
+    default input #1ns output #1ns; 
     output req;
     output data;
     input  ack;
   endclocking
 
   clocking mon_cb @(posedge clk);
-    default input #100ps;
+    default input #1ns;
     input req;
     input data;
     input ack;
